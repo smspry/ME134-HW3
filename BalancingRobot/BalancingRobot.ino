@@ -6,58 +6,103 @@
 */
 
 #include <JY901.h>
+#include "Adafruit_VL53L0X.h"
 
-// Motor pins
-const int MOTORPIN1 = 26;
-const int MOTORPIN2 = 25;
-const int ENABLEPIN = 27;
+Adafruit_VL53L0X lidar = Adafruit_VL53L0X();
+
+// Pins
+const int ENABLEPIN = 12;
+const int MOTORPIN1 = 14;
+const int MOTORPIN2 = 27;
+const int RLEDPIN = 32;
+const int YLEDPIN = 33;
+const int GLEDPIN = 25;
 
 // Setting PWM properties
 const int freq = 30000;
 const int pwmChannel = 0;
 const int resolution = 8;
-int dutyCycle = 200;
+int dutyCycle = 255;
 
 const float Kp = 1.0;
-const float Ki = 0;
-const float Kd = 1;
-const int flat = 0;
-int acc = 0;
+const float Ki = 0.0;
+const float Kd = 1.0;
+const int bal_angle = 0;
+int distance_sum = 0;
+const float distance_r = 50;
+const float distance_y = 80;
+const float distance_g = 110;
+float range_mm;
 
 void PID() {
-  int distance = round(JY901.getRoll()) - flat;
+  JY901.receiveSerialData();
+  int distance = round(JY901.getRoll()) - bal_angle;
 //  float ang_vel = JY901.getGyroZ();
-//  acc += distance;
+//  distance_sum += distance;
 
-  if (distance >= 0) {
+  if (distance <= 0) {              // CCW
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, HIGH);
-    dutyCycle = Kp * map(distance, flat, 90, 0, 200);
+    dutyCycle = Kp * map(distance, bal_angle, -90, 0, 255);
   }
   else {
-    digitalWrite(MOTORPIN1, HIGH);
+    digitalWrite(MOTORPIN1, HIGH);  // CW
     digitalWrite(MOTORPIN2, LOW);
-    dutyCycle = Kp * map(distance, flat, -90, 0, 200);
+    dutyCycle = Kp * map(distance, bal_angle, 90, 0, 255);
   }
   ledcWrite(pwmChannel, dutyCycle);
-  Serial.println(dutyCycle);
-  Serial.println(JY901.getRoll());
+}
+
+void ledControl() {
+  VL53L0X_RangingMeasurementData_t measure;
+  lidar.rangingTest(&measure, false);
+  range_mm = measure.RangeMilliMeter;
+  
+  if (measure.RangeStatus == 4) {
+    digitalWrite(RLEDPIN, LOW);
+    digitalWrite(YLEDPIN, LOW);
+    digitalWrite(GLEDPIN, LOW);
+  }
+  else if (range_mm <= distance_r) {
+    digitalWrite(RLEDPIN, HIGH);
+    digitalWrite(YLEDPIN, LOW);
+    digitalWrite(GLEDPIN, LOW);
+  }
+  else if (range_mm > distance_r && range_mm <= distance_y) {
+    digitalWrite(RLEDPIN, LOW);
+    digitalWrite(YLEDPIN, HIGH);
+    digitalWrite(GLEDPIN, LOW);
+  }
+  else if (range_mm > distance_y) {
+    digitalWrite(RLEDPIN, LOW);
+    digitalWrite(YLEDPIN, LOW);
+    digitalWrite(GLEDPIN, HIGH);
+  }
 }
 
 void setup() {
   Serial.begin(115200);
-  JY901.startIIC();
+  Serial2.begin(9600);
+  JY901.attach(Serial2);
+  lidar.begin();
 
   pinMode(MOTORPIN1, OUTPUT);
   pinMode(MOTORPIN2, OUTPUT);
   pinMode(ENABLEPIN, OUTPUT);
+  pinMode(RLEDPIN, OUTPUT);
+  pinMode(YLEDPIN, OUTPUT);
+  pinMode(GLEDPIN, OUTPUT);
+
+  digitalWrite(RLEDPIN, LOW);
+  digitalWrite(YLEDPIN, LOW);
+  digitalWrite(GLEDPIN, LOW);
 
   ledcSetup(pwmChannel, freq, resolution);
   ledcAttachPin(ENABLEPIN, pwmChannel);
-//  ledcWrite(pwmChannel, dutyCycle);
 }
 
 void loop() {
   PID();
+  ledControl();
   delay(30);
 }
