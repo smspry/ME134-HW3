@@ -18,39 +18,67 @@ const int RLEDPIN = 32;
 const int YLEDPIN = 33;
 const int GLEDPIN = 25;
 
-// Setting PWM properties
+// PWM properties
 const int freq = 30000;
 const int pwmChannel = 0;
 const int resolution = 8;
 int dutyCycle = 255;
 
-const float Kp = 1.0;
-const float Ki = 0.0;
-const float Kd = 1.0;
-const int bal_angle = 0;
-int distance_sum = 0;
-const float distance_r = 50;
-const float distance_y = 80;
-const float distance_g = 110;
-float range_mm;
+// PID
+const float Kp = 0.6;            // P control gain
+const float Ki = 0.0;            // I control gain
+const float Kd = 0.4;            // D control gain
+const int bal_angle = 0;         // Angle when balanced
+int distance_sum = 0;            // Accumulated distance
+
+// Lidar
+const float distance_r = 50;     // Lidar threshold for red LED
+const float distance_y = 80;     // Lidar threshold for yellow LED
+const float distance_g = 110;    // Lidar threshold for green LED
+float range_mm;                  // Lidar measurement in mm
 
 void PID() {
   JY901.receiveSerialData();
   int distance = round(JY901.getRoll()) - bal_angle;
-//  float ang_vel = JY901.getGyroZ();
-//  distance_sum += distance;
+  float ang_vel = JY901.getGyroX();
+  distance_sum += distance;
 
-  if (distance <= 0) {              // CCW
+  if (distance <= 5 && distance >= -5) {
+    digitalWrite(MOTORPIN1, LOW);
+    digitalWrite(MOTORPIN2, LOW);
+  }
+//  else if (distance <= -10 && distance >= -30) {
+//    digitalWrite(MOTORPIN1, LOW);
+//    digitalWrite(MOTORPIN2, HIGH);
+//    dutyCycle = 128;
+//  }
+//  else if (distance >= 10 && distance <= 30) {
+//    digitalWrite(MOTORPIN1, HIGH);
+//    digitalWrite(MOTORPIN2, LOW);
+//    dutyCycle = 128;
+//  }
+  else if (distance <= -30) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, HIGH);
-    dutyCycle = Kp * map(distance, bal_angle, -90, 0, 255);
+    dutyCycle = 255;
+  }
+  else if (distance >= 30) {
+    digitalWrite(MOTORPIN1, HIGH);
+    digitalWrite(MOTORPIN2, LOW);
+    dutyCycle = 128;
+  }
+  else if (distance <= 0) {
+    digitalWrite(MOTORPIN1, LOW);
+    digitalWrite(MOTORPIN2, HIGH);
+    dutyCycle = Kp * map(distance, bal_angle, -60, 0, 255) - Ki * distance_sum + Kd * ang_vel;
   }
   else {
-    digitalWrite(MOTORPIN1, HIGH);  // CW
+    digitalWrite(MOTORPIN1, HIGH);
     digitalWrite(MOTORPIN2, LOW);
-    dutyCycle = Kp * map(distance, bal_angle, 90, 0, 255);
+    dutyCycle = Kp * map(distance, bal_angle, 60, 0, 255) - Ki * distance_sum - Kd * ang_vel;
   }
   ledcWrite(pwmChannel, dutyCycle);
+  Serial.println(distance);
 }
 
 void ledControl() {
@@ -68,12 +96,12 @@ void ledControl() {
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, LOW);
   }
-  else if (range_mm > distance_r && range_mm <= distance_y) {
+  else if (range_mm <= distance_y) {
     digitalWrite(RLEDPIN, LOW);
     digitalWrite(YLEDPIN, HIGH);
     digitalWrite(GLEDPIN, LOW);
   }
-  else if (range_mm > distance_y) {
+  else {
     digitalWrite(RLEDPIN, LOW);
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, HIGH);
