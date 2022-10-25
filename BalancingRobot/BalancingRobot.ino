@@ -25,9 +25,9 @@ const int resolution = 8;
 int dutyCycle = 255;
 
 // PID
-const float Kp = 0.6;            // P control gain
+const float Kp = 4.0;            // P control gain
 const float Ki = 0.0;            // I control gain
-const float Kd = 0.4;            // D control gain
+const float Kd = 0.5;            // D control gain
 const int bal_angle = 0;         // Angle when balanced
 int distance_sum = 0;            // Accumulated distance
 
@@ -39,44 +39,27 @@ float range_mm;                  // Lidar measurement in mm
 
 void PID() {
   JY901.receiveSerialData();
-  int distance = round(JY901.getRoll()) - bal_angle;
+  int distance = round(bal_angle - JY901.getRoll());
   float ang_vel = JY901.getGyroX();
+  float control;
   distance_sum += distance;
 
-  if (distance <= 5 && distance >= -5) {
+  control = Kp * distance + Kd * (0 - ang_vel);
+
+  if (distance <= 2 && distance >= -2) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, LOW);
   }
-//  else if (distance <= -10 && distance >= -30) {
-//    digitalWrite(MOTORPIN1, LOW);
-//    digitalWrite(MOTORPIN2, HIGH);
-//    dutyCycle = 128;
-//  }
-//  else if (distance >= 10 && distance <= 30) {
-//    digitalWrite(MOTORPIN1, HIGH);
-//    digitalWrite(MOTORPIN2, LOW);
-//    dutyCycle = 128;
-//  }
-  else if (distance <= -30) {
+  else if (control > 0) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, HIGH);
-    dutyCycle = 255;
   }
-  else if (distance >= 30) {
+  else if (control < 0) {
     digitalWrite(MOTORPIN1, HIGH);
     digitalWrite(MOTORPIN2, LOW);
-    dutyCycle = 128;
   }
-  else if (distance <= 0) {
-    digitalWrite(MOTORPIN1, LOW);
-    digitalWrite(MOTORPIN2, HIGH);
-    dutyCycle = Kp * map(distance, bal_angle, -60, 0, 255) - Ki * distance_sum + Kd * ang_vel;
-  }
-  else {
-    digitalWrite(MOTORPIN1, HIGH);
-    digitalWrite(MOTORPIN2, LOW);
-    dutyCycle = Kp * map(distance, bal_angle, 60, 0, 255) - Ki * distance_sum - Kd * ang_vel;
-  }
+  dutyCycle = abs(control);
+
   ledcWrite(pwmChannel, dutyCycle);
   Serial.println(distance);
 }
