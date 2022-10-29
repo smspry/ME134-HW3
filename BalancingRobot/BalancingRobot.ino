@@ -12,8 +12,8 @@ Adafruit_VL53L0X lidar = Adafruit_VL53L0X();
 
 // Pins
 const int ENABLEPIN = 12;
-const int MOTORPIN1 = 14;
-const int MOTORPIN2 = 27;
+const int MOTORPIN2 = 14;
+const int MOTORPIN1 = 27;
 const int RLEDPIN = 32;
 const int YLEDPIN = 33;
 const int GLEDPIN = 25;
@@ -25,16 +25,16 @@ const int resolution = 8;
 int dutyCycle = 255;
 
 // PID
-const float Kp = 4.0;            // P control gain
-const float Ki = 0.0;            // I control gain
-const float Kd = 0.5;            // D control gain
+const float Kp = 14.0;           // P control gain
+const float Ki = 0.1;            // I control gain
+const float Kd = 4.0;            // D control gain
 const int bal_angle = 0;         // Angle when balanced
 int distance_sum = 0;            // Accumulated distance
 
 // Lidar
-const float distance_r = 50;     // Lidar threshold for red LED
-const float distance_y = 80;     // Lidar threshold for yellow LED
-const float distance_g = 110;    // Lidar threshold for green LED
+const float distance_r = 40;     // Lidar threshold for red LED
+const float distance_y = 50;     // Lidar threshold for yellow LED
+const float distance_g = 80;     // Lidar threshold for green LED
 float range_mm;                  // Lidar measurement in mm
 
 void PID() {
@@ -44,13 +44,9 @@ void PID() {
   float control;
   distance_sum += distance;
 
-  control = Kp * distance + Kd * (0 - ang_vel);
+  control = Kp * distance + Ki * distance_sum + Kd * (0 - ang_vel);
 
-  if (distance <= 2 && distance >= -2) {
-    digitalWrite(MOTORPIN1, LOW);
-    digitalWrite(MOTORPIN2, LOW);
-  }
-  else if (control > 0) {
+  if (control > 0) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, HIGH);
   }
@@ -58,10 +54,25 @@ void PID() {
     digitalWrite(MOTORPIN1, HIGH);
     digitalWrite(MOTORPIN2, LOW);
   }
-  dutyCycle = abs(control);
+
+  if (distance >= 20 + bal_angle || distance <= -20  + bal_angle) {
+    dutyCycle = 150;
+  }
+  else if (distance <= 3 && distance >= -3) {
+    digitalWrite(MOTORPIN1, LOW);
+    digitalWrite(MOTORPIN2, LOW);
+  }
+  else {
+    dutyCycle = abs(control);
+  }
+
+  if (dutyCycle >= 150) {
+    dutyCycle = 150;
+  }
 
   ledcWrite(pwmChannel, dutyCycle);
-  Serial.println(distance);
+  Serial.print("distance: "); Serial.print(distance); Serial.println();
+//  Serial.print("duty cycle: "); Serial.println(dutyCycle); Serial.println("\n");
 }
 
 void ledControl() {
