@@ -3,8 +3,11 @@
  *  ME-134 Robotics
  *  Balancing Robot project by Kyu Rae Kim, Selina Spry, and Michelle Kim
  *  A scale that self-balances with uneven weights
+ *  Target goal:  balance with a weight on only one side
+ *  Stretch goal: while balancing, put weights on either sides to make the system more dynamic
 */
 
+#include <math.h>
 #include <JY901.h>
 #include "Adafruit_VL53L0X.h"
 
@@ -24,26 +27,32 @@ const int pwmChannel = 0;
 const int resolution = 8;
 int dutyCycle = 255;
 
+// General measurements
+float radius = 197;
+float plate_height = 92.0;
+
 // PID
 const float Kp = 14.0;           // P control gain
 const float Ki = 0.1;            // I control gain
 const float Kd = 4.0;            // D control gain
 const int bal_angle = 0;         // Angle when balanced
+int distance;                    // Angle between measured and desired points
 int distance_sum = 0;            // Accumulated distance
+float ang_vel;                   // Angular velocity
+float control;                   // Control output
 
 // Lidar
 const float distance_r = 40;     // Lidar threshold for red LED
 const float distance_y = 50;     // Lidar threshold for yellow LED
 const float distance_g = 80;     // Lidar threshold for green LED
 float range_mm;                  // Lidar measurement in mm
+VL53L0X_RangingMeasurementData_t measure;
 
 void PID() {
   JY901.receiveSerialData();
-  int distance = round(bal_angle - JY901.getRoll());
-  float ang_vel = JY901.getGyroX();
-  float control;
+  distance = round(bal_angle - JY901.getRoll());
+  ang_vel = JY901.getGyroX();
   distance_sum += distance;
-
   control = Kp * distance + Ki * distance_sum + Kd * (0 - ang_vel);
 
   if (control > 0) {
@@ -71,12 +80,11 @@ void PID() {
   }
 
   ledcWrite(pwmChannel, dutyCycle);
-  Serial.print("distance: "); Serial.print(distance); Serial.println();
+//  Serial.print("distance: "); Serial.print(distance); Serial.println();
 //  Serial.print("duty cycle: "); Serial.println(dutyCycle); Serial.println("\n");
 }
 
 void ledControl() {
-  VL53L0X_RangingMeasurementData_t measure;
   lidar.rangingTest(&measure, false);
   range_mm = measure.RangeMilliMeter;
   
@@ -100,6 +108,23 @@ void ledControl() {
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, HIGH);
   }
+}
+
+void compareSensorData() {
+  lidar.rangingTest(&measure, false);
+  JY901.receiveSerialData();
+
+  range_mm = measure.RangeMilliMeter;
+  float measured_angle = round(bal_angle - JY901.getRoll());
+  float A = sqrt(  pow(radius,2)   +    pow(range_mm + plate_height,2)    
+            - 2 * radius * (range_mm + plate_height) * cos(0.418879));
+  float calculated_angle = acos((pow(A,2) + pow(radius,2) - pow(range_mm + plate_height,2))/(2*A*radius));
+  calculated_angle = 66 - calculated_angle * 180 / M_PI;
+  float percent_err = abs((calculated_angle - measured_angle) / measured_angle) * 100;
+
+  Serial.print("Measured Angle:   "); Serial.print(measured_angle); Serial.println();
+  Serial.print("Calculated Angle: "); Serial.print(calculated_angle); Serial.println();
+  Serial.print("Percent Error:    "); Serial.print(percent_err); Serial.print("%"); Serial.println("\n");
 }
 
 void setup() {
@@ -126,5 +151,6 @@ void setup() {
 void loop() {
   PID();
   ledControl();
+  compareSensorData();
   delay(30);
 }
