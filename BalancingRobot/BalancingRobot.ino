@@ -11,12 +11,10 @@
 #include <JY901.h>
 #include "Adafruit_VL53L0X.h"
 
-Adafruit_VL53L0X lidar = Adafruit_VL53L0X();
-
 // Pins
 const int ENABLEPIN = 12;
-const int MOTORPIN2 = 14;
 const int MOTORPIN1 = 27;
+const int MOTORPIN2 = 14;
 const int RLEDPIN = 32;
 const int YLEDPIN = 33;
 const int GLEDPIN = 25;
@@ -46,8 +44,10 @@ const float distance_r = 40;     // Lidar threshold for red LED
 const float distance_y = 50;     // Lidar threshold for yellow LED
 const float distance_g = 80;     // Lidar threshold for green LED
 float range_mm;                  // Lidar measurement in mm
+Adafruit_VL53L0X lidar = Adafruit_VL53L0X();
 VL53L0X_RangingMeasurementData_t measure;
 
+/* PID control function */
 void PID() {
   JY901.receiveSerialData();
   distance = round(bal_angle - JY901.getRoll());
@@ -55,6 +55,7 @@ void PID() {
   distance_sum += distance;
   control = Kp * distance + Ki * distance_sum + Kd * (0 - ang_vel);
 
+  // Determine motor direction according to the control output signs
   if (control > 0) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, HIGH);
@@ -64,17 +65,21 @@ void PID() {
     digitalWrite(MOTORPIN2, LOW);
   }
 
+  // High speed in this angle range to have enough torque to initially lift up weights
   if (distance >= 20 + bal_angle || distance <= -20  + bal_angle) {
     dutyCycle = 150;
   }
+  // Differential gap to prevent excessive oscillation
   else if (distance <= 3 && distance >= -3) {
     digitalWrite(MOTORPIN1, LOW);
     digitalWrite(MOTORPIN2, LOW);
   }
+  // Speed of the motor determined by the control output
   else {
     dutyCycle = abs(control);
   }
 
+  // Limit the maximum speed
   if (dutyCycle >= 150) {
     dutyCycle = 150;
   }
@@ -84,46 +89,54 @@ void PID() {
 //  Serial.print("duty cycle: "); Serial.println(dutyCycle); Serial.println("\n");
 }
 
+/* Function to control LEDs according to the Lidar measurements */
 void ledControl() {
   lidar.rangingTest(&measure, false);
   range_mm = measure.RangeMilliMeter;
   
-  if (measure.RangeStatus == 4) {
+  if (measure.RangeStatus == 4) {      // out of range
     digitalWrite(RLEDPIN, LOW);
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, LOW);
   }
-  else if (range_mm <= distance_r) {
+  else if (range_mm <= distance_r) {   // turn on red LED
     digitalWrite(RLEDPIN, HIGH);
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, LOW);
   }
-  else if (range_mm <= distance_y) {
+  else if (range_mm <= distance_y) {   // turn on yellow LED
     digitalWrite(RLEDPIN, LOW);
     digitalWrite(YLEDPIN, HIGH);
     digitalWrite(GLEDPIN, LOW);
   }
-  else {
+  else {                               // turn on green LED
     digitalWrite(RLEDPIN, LOW);
     digitalWrite(YLEDPIN, LOW);
     digitalWrite(GLEDPIN, HIGH);
   }
 }
 
+/* Function to compare Lidar and IMU measurements */
 void compareSensorData() {
-  lidar.rangingTest(&measure, false);
   JY901.receiveSerialData();
-
+  lidar.rangingTest(&measure, false);
   range_mm = measure.RangeMilliMeter;
+  
+  // Measured angle from IMU
   float measured_angle = round(bal_angle - JY901.getRoll());
-  float A = sqrt(  pow(radius,2)   +    pow(range_mm + plate_height,2)    
-            - 2 * radius * (range_mm + plate_height) * cos(0.418879));
+  
+  // Cosine Rule to calculate the angle from linear Lidar measurement
+  float A = sqrt(pow(radius,2) + pow(range_mm + plate_height,2) - 2*radius*(range_mm + plate_height)*cos(0.418879));
   float calculated_angle = acos((pow(A,2) + pow(radius,2) - pow(range_mm + plate_height,2))/(2*A*radius));
   calculated_angle = 66 - calculated_angle * 180 / M_PI;
-  float percent_err = abs((calculated_angle - measured_angle) / measured_angle) * 100;
+
+  // Calculate error
+  float error = abs(calculated_angle - measured_angle);
+  float percent_err = error / measured_angle * 100;
 
   Serial.print("Measured Angle:   "); Serial.print(measured_angle); Serial.println();
   Serial.print("Calculated Angle: "); Serial.print(calculated_angle); Serial.println();
+  Serial.print("Difference:       "); Serial.print(error); Serial.println();
   Serial.print("Percent Error:    "); Serial.print(percent_err); Serial.print("%"); Serial.println("\n");
 }
 
